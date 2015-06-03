@@ -1,0 +1,105 @@
+#! /usr/bin/env perl -w
+# License: GPLv2
+#
+# Inspiration and parts borrowed from resize-font:
+# https://github.com/simmel/urxvt-resize-font
+
+# Usage:
+#
+# URxvt.perl-ext-common: ...,fixed-cols
+# xrdb ~/.Xresources
+#
+# URxvt.fixed-cols.ncols: 80
+# URxvt.fixed-cols.resize: C-space
+
+#Number of columns we want per window
+my $numcols = 80;
+
+use strict;
+
+sub on_init {
+  my ($self) = @_;
+  my $commands = {
+    "resize" => "C-space",
+  };
+  bind_hotkeys($self, $commands);
+}
+
+sub on_start {
+  my ($self) = @_;
+}
+
+sub on_action {
+  my ($self, $action) = @_;
+  on_user_command($self, "fixed-cols:" . $action);
+}
+
+#Borrowed from resize-font:
+#https://github.com/simmel/urxvt-resize-font
+sub bind_hotkeys {
+  my ($self, $commands) = @_;
+  for (keys %$commands) {
+    my $hotkey = $self->x_resource("fixed-cols.$_") || $$commands{$_};
+
+    $self->parse_keysym($hotkey, "perl:fixed-cols:$_") or
+    warn "unable to register '$hotkey' as hotkey for $_\n";
+  }
+}
+
+sub resize {
+  my ($self, $string) = @_;
+  my $regex = qr"(?!pixelsize=)([-+]?[0-9]*\.?[0-9]+)";
+  my $config_cols= $self->x_resource("fixed-cols.ncols");
+
+  my $maxiter=1; #Fail after this many attempts
+
+  my $cur_cols = $self->ncol;
+
+  if($config_cols > 0) {
+    $numcols = $config_cols;
+  }
+
+  #World's worst optimization algorithm
+  for(my $i=$maxiter; $i > 0 && $cur_cols != $numcols; $i--) {
+    my $font = $self->resource('font');
+    my $mod=0;
+    if($cur_cols > $numcols) { #font is too small
+        $mod = +0.1;  
+    } elsif($cur_cols < $numcols) { #font is too big
+        $mod = -0.1;  
+    }
+
+    $font =~ s/$regex/$1+$mod/e;
+    $self->cmd_parse(sprintf "\33]710;%s\007", $font);
+    $self->want_refresh();
+    $self->cmd_parse(sprintf "%s\n", $font);
+    $cur_cols = $self->ncol;
+  }
+
+  #Now try and make up the rest with letterspacing
+  for(my $i=$maxiter; $i > 0 && $cur_cols != $numcols; $i--) {
+    my $spacing = $self->resource('letterSpace');
+    if($cur_cols > $numcols) { #spacing is too wide
+        $spacing--;
+    } elsif($cur_cols < $numcols) { #spacing is too small
+        $spacing++;
+    }
+    
+    $self->cmd_parse($spacing);
+    $self->resource(letterSpace => $spacing);
+  }
+
+  $self->cmd_parse(
+         sprintf "current cols: %d, requested cols: %d\n",
+                 $cur_cols, $numcols,);
+  $self->cmd_parse(sprintf "letterSpace: %d", $self->resource('letterSpace'));
+}
+
+sub on_user_command {
+  my ($self, $cmd) = @_;
+
+  if ($cmd =~ /resize$/) {
+    $self->resize;
+  }
+  ()
+}
