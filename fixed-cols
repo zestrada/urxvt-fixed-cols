@@ -51,7 +51,7 @@ sub resize {
   my $regex = qr"(?!pixelsize=)([-+]?[0-9]*\.?[0-9]+)";
   my $config_cols= $self->x_resource("fixed-cols.ncols");
 
-  my $maxiter=1; #Fail after this many attempts
+  my $maxiter=5; #Fail after this many attempts
 
   my $cur_cols = $self->ncol;
 
@@ -71,28 +71,35 @@ sub resize {
 
     $font =~ s/$regex/$1+$mod/e;
     $self->cmd_parse(sprintf "\33]710;%s\007", $font);
-    $self->want_refresh();
+    $self->set_fonts();
     $self->cmd_parse(sprintf "%s\n", $font);
     $cur_cols = $self->ncol;
+    $self->cmd_parse(sprintf "cols: %s\n", $cur_cols);
   }
 
   #Now try and make up the rest with letterspacing
   for(my $i=$maxiter; $i > 0 && $cur_cols != $numcols; $i--) {
-    my $spacing = $self->resource('letterSpace');
-    if($cur_cols > $numcols) { #spacing is too wide
+    my $spacing = $self->letterSpace();
+    my $font = $self->resource('font');
+    if($cur_cols < $numcols) { #spacing is too wide
         $spacing--;
-    } elsif($cur_cols < $numcols) { #spacing is too small
+    } elsif($cur_cols > $numcols) { #spacing is too small
         $spacing++;
     }
     
     $self->cmd_parse($spacing);
-    $self->resource(letterSpace => $spacing);
+    $self->letterSpace($spacing);
+    $self->set_fonts();
+    $self->cmd_parse(sprintf "\33]710;%s\007", $font);
+    $cur_cols = $self->ncol;
+    $self->cmd_parse(sprintf "cols: %s\n", $cur_cols);
   }
 
   $self->cmd_parse(
          sprintf "current cols: %d, requested cols: %d\n",
                  $cur_cols, $numcols,);
-  $self->cmd_parse(sprintf "letterSpace: %d", $self->resource('letterSpace'));
+  #$self->cmd_parse(sprintf "letterSpace: %d\n", $self->resource('letterSpace'));
+  $self->cmd_parse(sprintf "window width: %d, font width: %d ", $self->width);
 }
 
 sub on_user_command {
